@@ -74,7 +74,7 @@ async def before_status_update(self):
 async def keep_alive(self):
     if self.session:
         try:
-            url = "https://sevenmaya-6.onrender.com" # رابطك المباشر
+            url = "https://sevenmaya-2-hh9c.onrender.com" # رابطك المباشر
             async with self.session.get(url) as resp:
                 print(f"💡 KeepAlive ping: {resp.status}")
         except Exception as e:
@@ -209,3 +209,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
