@@ -3,12 +3,10 @@ from discord.ext import commands, tasks
 from flask import Flask
 import threading
 import os
-import asyncio
 import aiohttp
 import re
 import unicodedata
-from datetime import datetime, timedelta, UTC
-from discord.utils import utcnow
+from datetime import datetime, timedelta, timezone
 
 # --- Flask Keep-Alive ---
 app = Flask(__name__)
@@ -47,13 +45,12 @@ class MyBot(commands.Bot):
         self.update_status.start()
         self.keep_alive.start()
 
-    # 🔹 ping دوري لمنع النوم
     async def close(self):
         if self.session:
             await self.session.close()
         await super().close()
 
-# --- تحديث الحالة ---
+# --- تحديث الحالة كل 5 دقائق لتقليل الضغط على Discord ---
 @tasks.loop(minutes=5)
 async def update_status(self):
     try:
@@ -69,12 +66,12 @@ async def update_status(self):
 async def before_status_update(self):
     await self.wait_until_ready()
 
-# --- Keep-Alive Ping دوري لمنع النوم ---
-@tasks.loop(minutes=1)
+# --- Keep-Alive Ping كل 5 دقائق ---
+@tasks.loop(minutes=5)
 async def keep_alive(self):
     if self.session:
         try:
-            url = "https://sevenmaya-2-hh9c.onrender.com" # رابطك المباشر
+            url = "https://sevenmaya-2-hh9c.onrender.com"  # ضع رابطك المباشر
             async with self.session.get(url) as resp:
                 print(f"💡 KeepAlive ping: {resp.status}")
         except Exception as e:
@@ -95,10 +92,8 @@ def normalize_text(self, text: str) -> str:
 # --- كشف الروابط ---
 def contains_link(self, message: discord.Message) -> bool:
     spotify_whitelist = ["spotify.com", "open.spotify.com", "spotify.link"]
-    shorteners = [
-        "bit.ly", "tinyurl.com", "t.co", "goo.gl",
-        "is.gd", "cutt.ly", "rebrand.ly", "shorturl.at"
-    ]
+    shorteners = ["bit.ly", "tinyurl.com", "t.co", "goo.gl",
+                  "is.gd", "cutt.ly", "rebrand.ly", "shorturl.at"]
 
     full_content = message.content
     for embed in message.embeds:
@@ -111,41 +106,26 @@ def contains_link(self, message: discord.Message) -> bool:
 
     content = self.normalize_text(full_content)
 
-    # Markdown links
     markdown_links = re.findall(r"\[.*?\]\((.*?)\)", full_content)
     for link in markdown_links:
-        link_norm = self.normalize_text(link)
-        if not any(domain in link_norm for domain in spotify_whitelist):
+        if not any(domain in link.lower() for domain in spotify_whitelist):
             return True
 
-    # http متقطع
-    if re.search(r"h\s*t\s*t\s*p\s*s?\s*:\s*/\s*/", full_content.lower()):
-        return True
-    # www متقطع
-    if re.search(r"w\s*w\s*w\s*\.", full_content.lower()):
-        return True
-    # روابط عادية
     if re.search(r"https?://", content):
         if not any(domain in content for domain in spotify_whitelist):
             return True
 
-    # دومينات عامة
     domain_pattern = r"[a-z0-9\-]+\.(com|net|org|gg|io|me|co|xyz|info|app|site|store|online|tech|dev|link)"
     if re.search(domain_pattern, content):
         if not any(domain in content for domain in spotify_whitelist):
             return True
 
-    # دعوات ديسكورد مخفية
-    if re.search(r"d\s*i\s*s\s*c\s*o\s*r\s*d\s*\.\s*g\s*g", full_content.lower()):
-        return True
     if "discord.com/invite" in content:
         return True
 
-    # Shorteners
     if any(short in content for short in shorteners):
         return True
 
-    # فحص المرفقات
     for attachment in message.attachments:
         filename = self.normalize_text(attachment.filename)
         if re.search(domain_pattern, filename):
@@ -154,12 +134,13 @@ def contains_link(self, message: discord.Message) -> bool:
     return False
 
 # --- معالجة الرسائل ---
+@MyBot.listen("on_message")
 async def on_message(self, message):
     if message.author.bot:
         return
 
     user_id = message.author.id
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
 
     if not any(role.permissions.manage_messages for role in message.author.roles):
         if self.contains_link(message):
@@ -186,7 +167,7 @@ async def on_message(self, message):
                 await message.channel.send(embed=embed)
             else:
                 try:
-                    until_time = utcnow() + timedelta(hours=1)
+                    until_time = now + timedelta(hours=1)
                     await message.author.timeout(until_time, reason="نشر روابط")
                     embed = discord.Embed(
                         title="⛔ تم اسكاتك",
@@ -202,11 +183,4 @@ async def on_message(self, message):
 
 # --- تشغيل البوت ---
 bot = MyBot()
-
-async def main():
-    async with bot:
-        await bot.start(TOKEN)
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
+bot.run(TOKEN)
